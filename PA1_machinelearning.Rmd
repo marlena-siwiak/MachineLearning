@@ -1,0 +1,80 @@
+Peer Assessment 1
+========================================================
+
+### Summary
+The aim of this project is to build and test a model to predict how well the exercise was performed based on accelerometers measurements. I constructed a random forest model based on 15 selected predictors. Its accuracy in the trully testing dataset was estimated by cross-validation and further measured in the second Course Project this week. 
+
+
+### Loading data and packages
+The strings "#DIV/0!" and "NA" are treated as NA.
+
+```{r}
+library(caret)
+library(randomForest)
+library(plyr)
+library(knitr)
+
+dtrain <- read.csv("pml-training.csv", header=TRUE, na.strings=c("#DIV/0!", "NA") )
+
+set.seed(100)
+```
+
+### Picking predictors
+I pick variables for our model to predict the activity quality i.e. the "classe" variable. They must be activity monitors and have no missing values.
+
+
+```{r pickPredictors, cache = T}
+keepcol <- function(col){
+  return(!any(is.na(col)))
+}
+
+goodcols <- sapply(dtrain, keepcol)
+dtrain_nona <- dtrain[, goodcols]
+  
+picked <-subset(dtrain_nona, select=-c(X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window))
+
+```
+Now, there are `r length(picked)-1` predictors of the classe variable. This is too much for my low computer power at home, so I choose a set of 15 most important variables using the varImp() function. To achieve this, I create a draft model on a much smaller subset of data.
+
+```{r draftModel, cache = T}
+j <- createDataPartition(y=picked$classe, p=0.02, list=FALSE )
+pretraining <- picked[j,]
+draftmodel <- train(classe~., data=pretraining, method="rf", importance=TRUE, prox=TRUE)
+vi <- varImp(draftmodel, type=2)$importance
+vi <- cbind(rownames(vi), vi)
+vi <- arrange(vi, desc(Overall))
+picked <-subset(picked, select=c(vi[1:15,1], classe))
+
+```
+
+### Cross validation
+I do cross validation by spliting the dtrain dataset into new training and testing sets. I am going to use the new testing set to estimate the out of sample error. 
+
+```{r crossValidation, cache = T}
+i <- createDataPartition(y=picked$classe, p=0.75, list=FALSE )
+mytraining <- picked[i,]
+mytesting <- picked[-i,]
+```
+
+### Model building
+I build a model using the random forest method, which seems the most suitable for predicting categorical variables like "classe".
+
+```{r buildModel, cache = T} 
+mymodel <- train(classe~., data=mytraining, method="rf", prox=TRUE)
+```
+
+### Estimating out of sample error
+I estimate errors in both mytraining and mytesting datasets.
+
+```{r estimateError, cache = T} 
+prediction_mytraining <- predict(mymodel, newdata=mytraining)
+cm_train <- confusionMatrix(prediction_mytraining, mytraining$classe)$overall
+
+prediction_mytesting <- predict(mymodel, newdata=mytesting)
+cm_test <- confusionMatrix(prediction_mytesting, mytesting$classe)$overall
+```
+The 95% CI for the accuracy of the model in the training dataset is [`r cm_train[3]`, `r cm_train[4]`]. The accuracy of predictions in mytesting dataset corresponds to the expected accuracy of the model in the trully testing set provided by the Coursera staff (not loaded here). The 95% CI for this accuracy is [`r cm_test[3]`, `r cm_test[4]`]. 
+
+```{r saveModel, echo=F} 
+save.image()
+```
